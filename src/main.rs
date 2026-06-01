@@ -1,37 +1,33 @@
-use std::io::prelude::*;
-use std::net::TcpListener;
-use std::net::TcpStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::net::TcpStream;
 
-fn handle_connection(mut stream: TcpStream) {
-    let mut buf = [0u8; 256];
+async fn handle_connection(mut connection: TcpStream) -> tokio::io::Result<()> {
+    let mut buf = [0u8; 512];
     loop {
-        match stream.read(&mut buf) {
-            Ok(0) => {
-                break;
-            }
+        match connection.read(&mut buf).await {
+            Ok(0) => return Ok(()),
             Ok(_bytes_read) => {
-                stream.write_all("+PONG\r\n".as_bytes()).unwrap();
+                connection.write_all("+PONG\r\n".as_bytes()).await?;
             }
             Err(e) => {
-                println!("error: {}", e);
-                break;
+                return Err(e);
             }
         }
     }
 }
 
-fn main() {
-    let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
+#[tokio::main]
+async fn main() -> tokio::io::Result<()> {
+    let host = "127.0.0.1";
+    let port = "6379";
+    let listener = TcpListener::bind(format!("{}:{}", host, port)).await?;
 
-    for connection in listener.incoming() {
-        match connection {
-            Ok(stream) => {
-                println!("accepted new connection");
-                handle_connection(stream);
-            }
-            Err(e) => {
-                println!("error: {}", e);
-            }
-        }
+    loop {
+        let (connection, _) = listener.accept().await?;
+
+        tokio::spawn(async move {
+            handle_connection(connection).await.unwrap();
+        });
     }
 }
