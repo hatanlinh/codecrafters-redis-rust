@@ -1,33 +1,42 @@
+use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
 
-async fn handle_connection(mut connection: TcpStream) -> tokio::io::Result<()> {
-    let mut buf = [0u8; 512];
+async fn handle_connection(mut stream: TcpStream) -> Result<()> {
+    let mut buf = [0u8; 1024];
+
     loop {
-        match connection.read(&mut buf).await {
-            Ok(0) => return Ok(()),
-            Ok(_bytes_read) => {
-                connection.write_all("+PONG\r\n".as_bytes()).await?;
-            }
-            Err(e) => {
-                return Err(e);
-            }
+        let bytes_read = stream.read(&mut buf).await?;
+
+        if bytes_read == 0 {
+            println!("Client closed the connection.");
+            break;
+        }
+
+        if &buf[..bytes_read] == b"*1\r\n$4\r\nPING\r\n" {
+            stream.write_all(b"+PONG\r\n").await?;
         }
     }
+
+    Ok(())
 }
 
 #[tokio::main]
-async fn main() -> tokio::io::Result<()> {
+async fn main() -> Result<()> {
     let host = "127.0.0.1";
     let port = "6379";
     let listener = TcpListener::bind(format!("{}:{}", host, port)).await?;
 
     loop {
-        let (connection, _) = listener.accept().await?;
+        let connection = listener.accept().await;
 
-        tokio::spawn(async move {
-            handle_connection(connection).await.unwrap();
-        });
+        match connection {
+            Ok((stream, _)) => {
+                tokio::spawn(handle_connection(stream));
+            }
+            Err(e) => {
+                print!("error: {}", e);
+            }
+        }
     }
 }
