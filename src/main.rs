@@ -1,20 +1,46 @@
+mod resp;
+
+use crate::resp::{RespData, RespParser};
+
 use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 async fn handle_connection(mut stream: TcpStream) -> Result<()> {
-    let mut buf = [0u8; 1024];
+    let mut buffer = [0u8; 1024];
+    let mut parser = RespParser::new();
 
     loop {
-        let bytes_read = stream.read(&mut buf).await?;
+        let bytes_read = stream.read(&mut buffer).await?;
 
         if bytes_read == 0 {
             println!("Client closed the connection.");
             break;
         }
 
-        if &buf[..bytes_read] == b"*1\r\n$4\r\nPING\r\n" {
-            stream.write_all(b"+PONG\r\n").await?;
+        parser.feed(&buffer[..bytes_read]);
+
+        while let Some(RespData::Array(request)) = parser.parse()? {
+            match request.as_slice() {
+                [RespData::BulkString(command)] => {
+                    if command.eq_ignore_ascii_case(b"PING") {
+                        let pong = RespData::SimpleString(String::from("PONG"));
+                        stream.write_all(pong.serialize().as_slice()).await?;
+                    }
+                }
+
+                [RespData::BulkString(command), arg] => {
+                    if command.eq_ignore_ascii_case(b"ECHO") {
+                        if matches!(arg, RespData::BulkString(_)) {
+                            stream.write_all(arg.serialize().as_slice()).await?;
+                        }
+                    }
+                }
+
+                _ => {
+                    continue;
+                }
+            }
         }
     }
 
