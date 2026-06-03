@@ -31,10 +31,14 @@ impl RespData {
             }
             RespData::BulkString(data) => {
                 result.push(b'$');
-                result.extend_from_slice(data.len().to_string().as_bytes());
-                result.extend_from_slice(b"\r\n");
-                result.extend_from_slice(data.as_slice());
-                result.extend_from_slice(b"\r\n");
+                if data.len() == 0 {
+                    result.extend_from_slice(b"-1\r\n");
+                } else {
+                    result.extend_from_slice(data.len().to_string().as_bytes());
+                    result.extend_from_slice(b"\r\n");
+                    result.extend_from_slice(data.as_slice());
+                    result.extend_from_slice(b"\r\n");
+                }
             }
             RespData::Array(arr) => {
                 result.push(b'*');
