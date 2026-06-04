@@ -39,17 +39,32 @@ impl Engine {
             ));
         }
 
+        let mut expire_in_ms: Option<u64> = None;
         if let RespData::BulkString(key) = &args[0]
             && let RespData::BulkString(value) = &args[1]
         {
-            self.storage.set(key.clone(), value.clone());
+            if args.len() > 3
+                && let RespData::BulkString(opt_name) = &args[2]
+                && let RespData::BulkString(opt_val) = &args[3]
+            {
+                match opt_name.as_slice() {
+                    opt if opt.eq_ignore_ascii_case(b"PX") => {
+                        expire_in_ms = std::str::from_utf8(opt_val)
+                            .ok()
+                            .and_then(|s| s.parse::<u64>().ok());
+                    }
+                    _ => (),
+                }
+            }
+
+            self.storage.set(key.clone(), value.clone(), expire_in_ms);
             return RespData::SimpleString(String::from("OK"));
         }
 
         RespData::Error(String::from("ERR incorrect type of arguments for 'set'"))
     }
 
-    pub fn handle_get(&self, args: &[RespData]) -> RespData {
+    pub fn handle_get(&mut self, args: &[RespData]) -> RespData {
         if args.len() < 1 {
             return RespData::Error(String::from(
                 "Err wrong number of arguments for 'get' command",
